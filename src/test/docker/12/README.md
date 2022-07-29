@@ -84,7 +84,7 @@ $ docker run -it --name ifx --privileged -e SIZE=small \
     xiaolin/ifx12-cdc-test:v1
 ```
 
-### Using Docker Compose
+### Also, we can use docker compose
 > We can also run ifx container with `docker composer`.
 > `docker-composer.yml` also integration with zookeeper & kafka for testing.
 
@@ -118,6 +118,25 @@ $ docker compose up -d
 - stop services with compose
 ```shell
 $ docker compose down
+```
+
+## Prepare for supporting table attach
+
+```bash
+$ docker exec -it ifx /bin/bash
+
+################# Enter into the container ####################
+
+cd /opt/ibm/localdata/spaces/
+touch rootdbs1 rootdbs2
+chmod 660 rootdbs1 rootdbs2
+onspaces -c -d rootdbs1 -p /opt/ibm/localdata/spaces/rootdbs1  -o 40 -s 2048000
+onspaces -c -d rootdbs2 -p /opt/ibm/localdata/spaces/rootdbs2  -o 40 -s 2048000
+```
+
+Then, We can support `attach` SQL Syntax for Informix like below.
+```sql
+alter fragment on table his_test_table attach test_table as partition partition_1 id < 20;
 ```
 
 ## Reference
