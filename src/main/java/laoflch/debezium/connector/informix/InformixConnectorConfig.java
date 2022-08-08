@@ -242,10 +242,10 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
             SNAPSHOT_MODE,
             RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
             HistorizedRelationalDatabaseConnectorConfig.DATABASE_HISTORY,
-            RelationalDatabaseConnectorConfig.TABLE_WHITELIST,
-            RelationalDatabaseConnectorConfig.TABLE_BLACKLIST,
+            RelationalDatabaseConnectorConfig.TABLE_INCLUDE_LIST,
+            RelationalDatabaseConnectorConfig.TABLE_EXCLUDE_LIST,
             RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
-            RelationalDatabaseConnectorConfig.COLUMN_BLACKLIST,
+            RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST,
             RelationalDatabaseConnectorConfig.DECIMAL_HANDLING_MODE,
             RelationalDatabaseConnectorConfig.TIME_PRECISION_MODE,
             RelationalDatabaseConnectorConfig.MSG_KEY_COLUMNS,
@@ -271,9 +271,9 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
                 KafkaDatabaseHistory.RECOVERY_POLL_INTERVAL_MS,
                 HistorizedRelationalDatabaseConnectorConfig.DATABASE_HISTORY);
         Field.group(config, "Events",
-                RelationalDatabaseConnectorConfig.TABLE_WHITELIST,
-                RelationalDatabaseConnectorConfig.TABLE_BLACKLIST,
-                RelationalDatabaseConnectorConfig.COLUMN_BLACKLIST,
+                RelationalDatabaseConnectorConfig.TABLE_INCLUDE_LIST,
+                RelationalDatabaseConnectorConfig.TABLE_EXCLUDE_LIST,
+                RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST,
                 RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
                 RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
                 Heartbeat.HEARTBEAT_INTERVAL,
@@ -304,7 +304,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
         this.databaseName = config.getString(DATABASE_NAME);
         this.snapshotMode = SnapshotMode.parse(config.getString(SNAPSHOT_MODE), SNAPSHOT_MODE.defaultValueAsString());
         this.snapshotIsolationMode = SnapshotIsolationMode.parse(config.getString(SNAPSHOT_ISOLATION_MODE), SNAPSHOT_ISOLATION_MODE.defaultValueAsString());
-        this.columnFilter = getColumnNameFilter(config.getString(RelationalDatabaseConnectorConfig.COLUMN_BLACKLIST));
+        this.columnFilter = getColumnNameFilter(config.getString(RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST));
     }
 
     private static ColumnNameFilter getColumnNameFilter(String excludedColumnPatterns) {
