@@ -56,6 +56,9 @@ public class TestHelper {
                 .withDefault(JdbcConfiguration.PORT, 9088)
                 .withDefault(JdbcConfiguration.USER, "informix")
                 .withDefault(JdbcConfiguration.PASSWORD, "in4mix")
+                .withDefault(InformixConnectorConfig.CDC_BUFFERSIZE, 819200)
+                .withDefault(InformixConnectorConfig.CDC_TIMEOUT, 5)
+                .withDefault(InformixConnectorConfig.CDC_MAXRECS, 5)
                 .build();
     }
 

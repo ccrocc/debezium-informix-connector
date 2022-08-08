@@ -208,6 +208,38 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
             .withValidation(Field::isRequired)
             .withDescription("The name of the database the connector should be monitoring.");
 
+    public static final Field CDC_BUFFERSIZE = Field.create("cdc.bufferSize")
+            .withDisplayName("Informix Stream Buffer Size For Record")
+            .withType(Type.INT)
+            .withWidth(Width.MEDIUM)
+            .withImportance(Importance.MEDIUM)
+            .withDefault(819200)
+            .withDescription("Informix Stream Buffer Size For Record. "
+                    + "Needs to be larger than the length of total records per transfer.");
+
+    public static final Field CDC_TIMEOUT = Field.create("cdc.timeOut")
+            .withDisplayName("CDC Record Reading Time Out")
+            .withType(Type.INT)
+            .withWidth(Width.SHORT)
+            .withImportance(Importance.LOW)
+            .withDefault(5)
+            .withDescription("Specifies the timeout behavior of a read call on the captured data:"
+                    + "`<0` Do not timeout."
+                    + "`0` Return immediately if no data is available."
+                    + "`1 or more` The number of seconds to wait for data before timing out.");
+
+    // ref: https://www.ibm.com/docs/en/informix-servers/12.10?topic=functions-cdc-opensess-function
+    // note: We can get more records per fetch in order to reduce TCPs during data transfer.
+    //       Based on our test, set this argument in `cdc_opensess()` in an appropriate value will make mass improvement.
+    public static final Field CDC_MAXRECS = Field.create("cdc.maxRecs")
+            .withDisplayName("Max Number of CDC Records Per Read.")
+            .withType(Type.INT)
+            .withWidth(Width.SHORT)
+            .withImportance(Importance.HIGH)
+            .withDefault(1)
+            .withDescription("The maximum number of CDC records to return per read function call. "
+                    + "This value takes precedence over the maximum number of bytes to return that is specified in the smart large object read function.");
+
     public static final Field SNAPSHOT_MODE = Field.create("snapshot.mode")
             .withDisplayName("Snapshot mode")
             .withEnum(SnapshotMode.class, SnapshotMode.INITIAL)

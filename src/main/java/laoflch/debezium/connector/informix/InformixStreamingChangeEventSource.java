@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Vector;
 
 import org.apache.kafka.connect.data.Struct;
 import org.slf4j.Logger;
@@ -18,7 +19,6 @@ import org.slf4j.LoggerFactory;
 
 import com.informix.jdbc.IfmxReadableType;
 import com.informix.stream.api.IfmxStreamRecord;
-import com.informix.stream.cdc.IfxCDCEngine;
 import com.informix.stream.cdc.records.IfxCDCBeginTransactionRecord;
 import com.informix.stream.cdc.records.IfxCDCCommitTransactionRecord;
 import com.informix.stream.cdc.records.IfxCDCMetaDataRecord;
@@ -94,45 +94,53 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
             }
 
             try {
-                IfmxStreamRecord record = cdcEngine.getCdcEngine().getRecord();
-                if (record.getSequenceId() >= lastPosition.getChangeLsn()) {
-                    LOGGER.info("Recover finished: from {} to {}, now Current seqId={}",
-                            lastPosition.getCommitLsn(), lastPosition.getChangeLsn(), record.getSequenceId());
-                    break;
-                }
-                switch (record.getType()) {
-                    case TIMEOUT:
-                        handleTimeout(offsetContext, (IfxCDCTimeoutRecord) record);
+
+                Vector<IfmxStreamRecord> records = cdcEngine.getCdcEngine().getRecords();
+
+                LOGGER.info("Received [{}] records in recovery state.", records.size());
+
+                for (IfmxStreamRecord record : records) {
+
+                    if (record.getSequenceId() >= lastPosition.getChangeLsn()) {
+                        LOGGER.info("Recover finished: from {} to {}, now Current seqId={}",
+                                lastPosition.getCommitLsn(), lastPosition.getChangeLsn(), record.getSequenceId());
                         break;
-                    case BEFORE_UPDATE:
-                        handleBeforeUpdate(offsetContext, (IfxCDCOperationRecord) record, transCache, true);
-                        break;
-                    case AFTER_UPDATE:
-                        handleAfterUpdate(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
-                        break;
-                    case BEGIN:
-                        handleBegin(offsetContext, (IfxCDCBeginTransactionRecord) record, transCache, true);
-                        break;
-                    case INSERT:
-                        handleInsert(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
-                        break;
-                    case COMMIT:
-                        handleCommit(cdcEngine, offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, true);
-                        break;
-                    case ROLLBACK:
-                        handleRollback(offsetContext, (IfxCDCRollbackTransactionRecord) record, transCache, false);
-                        break;
-                    case METADATA:
-                        handleMetadata(cdcEngine, (IfxCDCMetaDataRecord) record);
-                        break;
-                    case TRUNCATE:
-                        handleTruncate(cdcEngine, offsetContext, (IfxCDCTruncateRecord) record, transCache, true);
-                        break;
-                    case DELETE:
-                        handleDelete(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
-                        break;
-                    default:
-                        LOGGER.info("Handle unknown record-type = {}", record.getType());
+                    }
+                    switch (record.getType()) {
+                        case TIMEOUT:
+                            handleTimeout(offsetContext, (IfxCDCTimeoutRecord) record);
+                            break;
+                        case BEFORE_UPDATE:
+                            handleBeforeUpdate(offsetContext, (IfxCDCOperationRecord) record, transCache, true);
+                            break;
+                        case AFTER_UPDATE:
+                            handleAfterUpdate(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
+                            break;
+                        case BEGIN:
+                            handleBegin(offsetContext, (IfxCDCBeginTransactionRecord) record, transCache, true);
+                            break;
+                        case INSERT:
+                            handleInsert(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
+                            break;
+                        case COMMIT:
+                            handleCommit(cdcEngine, offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, true);
+                            break;
+                        case ROLLBACK:
+                            handleRollback(offsetContext, (IfxCDCRollbackTransactionRecord) record, transCache, false);
+                            break;
+                        case METADATA:
+                            handleMetadata(cdcEngine, (IfxCDCMetaDataRecord) record);
+                            break;
+                        case TRUNCATE:
+                            handleTruncate(cdcEngine, offsetContext, (IfxCDCTruncateRecord) record, transCache, true);
+                            break;
+                        case DELETE:
+                            handleDelete(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
+                            break;
+                        default:
+                            LOGGER.info("Handle unknown record-type = {}", record.getType());
+                    }
+
                 }
             }
             catch (SQLException e) {
@@ -150,40 +158,45 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
          */
         try {
             while (context.isRunning()) {
-                cdcEngine.stream((IfmxStreamRecord record) -> {
-                    switch (record.getType()) {
-                        case TIMEOUT:
-                            handleTimeout(offsetContext, (IfxCDCTimeoutRecord) record);
-                            break;
-                        case BEFORE_UPDATE:
-                            handleBeforeUpdate(offsetContext, (IfxCDCOperationRecord) record, transCache, false);
-                            break;
-                        case AFTER_UPDATE:
-                            handleAfterUpdate(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
-                            break;
-                        case BEGIN:
-                            handleBegin(offsetContext, (IfxCDCBeginTransactionRecord) record, transCache, false);
-                            break;
-                        case INSERT:
-                            handleInsert(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
-                            break;
-                        case COMMIT:
-                            handleCommit(cdcEngine, offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, false);
-                            break;
-                        case ROLLBACK:
-                            handleRollback(offsetContext, (IfxCDCRollbackTransactionRecord) record, transCache, false);
-                            break;
-                        case METADATA:
-                            handleMetadata(cdcEngine, (IfxCDCMetaDataRecord) record);
-                            break;
-                        case TRUNCATE:
-                            handleTruncate(cdcEngine, offsetContext, (IfxCDCTruncateRecord) record, transCache, false);
-                            break;
-                        case DELETE:
-                            handleDelete(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
-                            break;
-                        default:
-                            LOGGER.info("Handle unknown record-type = {}", record.getType());
+                cdcEngine.stream((Vector<IfmxStreamRecord> records) -> {
+
+                    LOGGER.info("Received [{}] records", records.size());
+
+                    for (IfmxStreamRecord record : records) {
+                        switch (record.getType()) {
+                            case TIMEOUT:
+                                handleTimeout(offsetContext, (IfxCDCTimeoutRecord) record);
+                                break;
+                            case BEFORE_UPDATE:
+                                handleBeforeUpdate(offsetContext, (IfxCDCOperationRecord) record, transCache, false);
+                                break;
+                            case AFTER_UPDATE:
+                                handleAfterUpdate(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
+                                break;
+                            case BEGIN:
+                                handleBegin(offsetContext, (IfxCDCBeginTransactionRecord) record, transCache, false);
+                                break;
+                            case INSERT:
+                                handleInsert(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
+                                break;
+                            case COMMIT:
+                                handleCommit(cdcEngine, offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, false);
+                                break;
+                            case ROLLBACK:
+                                handleRollback(offsetContext, (IfxCDCRollbackTransactionRecord) record, transCache, false);
+                                break;
+                            case METADATA:
+                                handleMetadata(cdcEngine, (IfxCDCMetaDataRecord) record);
+                                break;
+                            case TRUNCATE:
+                                handleTruncate(cdcEngine, offsetContext, (IfxCDCTruncateRecord) record, transCache, false);
+                                break;
+                            case DELETE:
+                                handleDelete(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
+                                break;
+                            default:
+                                LOGGER.info("Handle unknown record-type = {}", record.getType());
+                        }
                     }
 
                     return false;
@@ -223,14 +236,14 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                 record.getType(), record.getLabel(), record.getSequenceId());
 
         /*
-         * IfxCDCEngine engine = cdcEngine.getCdcEngine();
-         * List<IfxCDCEngine.IfmxWatchedTable> watchedTables = engine.getBuilder().getWatchedTables();
+         * POIfxCDCEngine engine = cdcEngine.getCdcEngine();
+         * List<POIfxCDCEngine.IfmxWatchedTable> watchedTables = engine.getBuilder().getWatchedTables();
          * List<IfxColumnInfo> cols = record.getColumns();
          * for (IfxColumnInfo cinfo : cols) {
          * LOGGER.info("ColumnInfo: colName={}, {}", cinfo.getColumnName(), cinfo.toString());
          * }
          * 
-         * for (IfxCDCEngine.IfmxWatchedTable tbl : watchedTables) {
+         * for (POIfxCDCEngine.IfmxWatchedTable tbl : watchedTables) {
          * LOGGER.info("Engine Watched Table: label={}, tabName={}", tbl.getLabel(), tbl.getTableName());
          * }
          */
@@ -541,7 +554,7 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
             if (!newValueTabname.equals("systables") && !newValueTabname.equals("syscolumns")) {
 
                 List<String> currentWatchedTables = new ArrayList<>();
-                for (IfxCDCEngine.IfmxWatchedTable watchedTable : cdcEngine.getCdcEngine().getBuilder().getWatchedTables()) {
+                for (POIfxCDCEngine.IfmxWatchedTable watchedTable : cdcEngine.getCdcEngine().getBuilder().getWatchedTables()) {
                     currentWatchedTables.add(watchedTable.getTableName());
                 }
 

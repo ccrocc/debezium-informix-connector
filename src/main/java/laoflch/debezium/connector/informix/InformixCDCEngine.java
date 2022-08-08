@@ -10,13 +10,13 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Vector;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.informix.jdbcx.IfxDataSource;
 import com.informix.stream.api.IfmxStreamRecord;
-import com.informix.stream.cdc.IfxCDCEngine;
 import com.informix.stream.impl.IfxStreamException;
 import com.informix.util.AdvancedUppercaseProperties;
 
@@ -36,19 +36,25 @@ public class InformixCDCEngine {
     private String user;
     private String password;
 
+    private static int bufferSize;
+    private static int timeOut;
+    private static int maxRecs;
+
     long lsn;
-    int timeOut;
     boolean hasInit;
 
-    private IfxCDCEngine cdcEngine;
+    private POIfxCDCEngine cdcEngine;
 
     private Map<Integer, TableId> tableIdByLabelId;
 
     public InformixCDCEngine(Configuration config) {
         cdcEngine = null;
         lsn = 0;
-        timeOut = 5;
         hasInit = false;
+
+        bufferSize = config.getInteger(InformixConnectorConfig.CDC_BUFFERSIZE);
+        timeOut = config.getInteger(InformixConnectorConfig.CDC_TIMEOUT);
+        maxRecs = config.getInteger(InformixConnectorConfig.CDC_MAXRECS);
 
         host = config.getString(JdbcConfiguration.HOSTNAME);
         port = config.getString(JdbcConfiguration.PORT);
@@ -77,18 +83,20 @@ public class InformixCDCEngine {
         }
     }
 
-    public IfxCDCEngine buildCDCEngine(String url, String user, String password, InformixDatabaseSchema schema) throws SQLException {
+    public POIfxCDCEngine buildCDCEngine(String url, String user, String password, InformixDatabaseSchema schema) throws SQLException {
         IfxDataSource ds = new IfxDataSource(url);
         ds.setUser(user);
         ds.setPassword(password);
         Properties dsMasked = propsWithMaskedPassword(ds.getDsProperties());
         LOGGER.info("Connecting to Informix CDC: {}", dsMasked);
 
-        IfxCDCEngine.Builder builder = new IfxCDCEngine.Builder(ds);
+        POIfxCDCEngine.Builder builder = new POIfxCDCEngine.Builder(ds);
 
         // TODO: Make an parameter 'buffer size' for better performance. Default value is 10240
-        builder.buffer(819200);
+        builder.buffer(this.bufferSize);
+        builder.maxRecs(this.maxRecs);
         builder.timeout(this.timeOut);
+        LOGGER.info("Set Informix CDC Builder Parameters: maxRecs=[{}] bufferSize=[{}] timeOut=[{}]", this.maxRecs, this.bufferSize, this.timeOut);
 
         schema.tableIds().forEach((TableId tid) -> {
             String tname = tid.catalog() + ":" + tid.schema() + "." + tid.table();
@@ -116,7 +124,7 @@ public class InformixCDCEngine {
          * Build Map of Label_id to TableId.
          */
         tableIdByLabelId.clear();
-        for (IfxCDCEngine.IfmxWatchedTable tbl : builder.getWatchedTables()) {
+        for (POIfxCDCEngine.IfmxWatchedTable tbl : builder.getWatchedTables()) {
             TableId tid = new TableId(tbl.getDatabaseName(), tbl.getNamespace(), tbl.getTableName());
             tableIdByLabelId.put(tbl.getLabel(), tid);
             LOGGER.info("Added WatchedTable : label={} -> tableId={}", tbl.getLabel(), tid);
@@ -149,12 +157,12 @@ public class InformixCDCEngine {
     }
 
     public void stream(StreamHandler streamHandler) throws InterruptedException, SQLException, IfxStreamException {
-        while (streamHandler.accept(cdcEngine.getRecord())) {
+        while (streamHandler.accept(cdcEngine.getRecords())) {
 
         }
     }
 
-    public IfxCDCEngine getCdcEngine() {
+    public POIfxCDCEngine getCdcEngine() {
         return cdcEngine;
     }
 
@@ -178,7 +186,7 @@ public class InformixCDCEngine {
 
     public interface StreamHandler {
 
-        boolean accept(IfmxStreamRecord record) throws SQLException, IfxStreamException, InterruptedException;
+        boolean accept(Vector<IfmxStreamRecord> records) throws SQLException, IfxStreamException, InterruptedException;
 
     }
 }
