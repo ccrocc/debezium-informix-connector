@@ -241,6 +241,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
             DATABASE_NAME,
             SNAPSHOT_MODE,
             RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
+            RelationalDatabaseConnectorConfig.SNAPSHOT_FULL_COLUMN_SCAN_FORCE,
             HistorizedRelationalDatabaseConnectorConfig.DATABASE_HISTORY,
             RelationalDatabaseConnectorConfig.TABLE_INCLUDE_LIST,
             RelationalDatabaseConnectorConfig.TABLE_EXCLUDE_LIST,
@@ -275,6 +276,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
                 RelationalDatabaseConnectorConfig.TABLE_EXCLUDE_LIST,
                 RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST,
                 RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
+                RelationalDatabaseConnectorConfig.SNAPSHOT_FULL_COLUMN_SCAN_FORCE,
                 RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
                 Heartbeat.HEARTBEAT_INTERVAL,
                 Heartbeat.HEARTBEAT_TOPICS_PREFIX,
@@ -298,7 +300,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
     private final ColumnNameFilter columnFilter;
 
     public InformixConnectorConfig(Configuration config) {
-        super(InformixConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(), x -> x.schema() + "." + x.table(), false,
+        super(InformixConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(config), x -> x.schema() + "." + x.table(), false,
                 ColumnFilterMode.SCHEMA);
 
         this.databaseName = config.getString(DATABASE_NAME);
@@ -357,10 +359,30 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
 
     private static class SystemTablesPredicate implements TableFilter {
 
+        protected static Configuration config = null;
+
+        public SystemTablesPredicate(Configuration config) {
+            this.config = config;
+        }
+
         @Override
         public boolean isIncluded(TableId t) {
+            // capture all tables by default
+            boolean isIncluded = true;
+            // keep `systables` and `syscolumns` in order to support DDL and Attach
+            String includedTablePatterns = config.getString(RelationalDatabaseConnectorConfig.TABLE_INCLUDE_LIST);
+            if (t.table().toLowerCase().equals("systables") || t.table().toLowerCase().equals("syscolumns")) {
+                isIncluded = true;
+            }
             // 过滤库中的系统表，informix的系统表以sys开头
-            return !(t.table().toLowerCase().startsWith("sys"));
+            else if (t.table().toLowerCase().startsWith("sys")) {
+                isIncluded = false;
+            }
+            else if (includedTablePatterns != null && includedTablePatterns.length() > 0) {
+                Predicate<TableId> delegate = Predicates.includes(includedTablePatterns, TableId::toString);
+                isIncluded = delegate.test(new TableId(null, t.schema(), t.table()));
+            }
+            return isIncluded;
         }
     }
 

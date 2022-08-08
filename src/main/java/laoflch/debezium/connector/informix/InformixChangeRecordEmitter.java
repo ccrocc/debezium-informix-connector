@@ -100,7 +100,7 @@ public class InformixChangeRecordEmitter extends RelationalChangeRecordEmitter {
         List<Object> list = new ArrayList<>();
         for (Field field : tableSchema.valueSchema().fields()) {
             IfmxReadableType ifmxReadableType = data.get(field.name());
-            Object toObject = ifmxReadableType.toObject();
+            Object toObject = null == ifmxReadableType ? null : ifmxReadableType.toObject();
             list.add(toObject);
         }
         return list.toArray();

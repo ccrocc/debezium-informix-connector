@@ -92,8 +92,17 @@ public class InformixCDCEngine {
 
         schema.tableIds().forEach((TableId tid) -> {
             String tname = tid.catalog() + ":" + tid.schema() + "." + tid.table();
-            String[] colNames = schema.tableFor(tid).columns().stream()
-                    .map(Column::name).toArray(String[]::new);
+            String[] colNames;
+            if (tid.table().equals("systables")) {
+                colNames = new String[]{ "tabname", "owner", "tabid" };
+            }
+            else if (tid.table().equals("syscolumns")) {
+                colNames = new String[]{ "colname", "tabid", "colno", "coltype", "collength" };
+            }
+            else {
+                colNames = schema.tableFor(tid).columns().stream()
+                        .map(Column::name).toArray(String[]::new);
+            }
             builder.watchTable(tname, colNames);
         });
 
@@ -106,6 +115,7 @@ public class InformixCDCEngine {
         /*
          * Build Map of Label_id to TableId.
          */
+        tableIdByLabelId.clear();
         for (IfxCDCEngine.IfmxWatchedTable tbl : builder.getWatchedTables()) {
             TableId tid = new TableId(tbl.getDatabaseName(), tbl.getNamespace(), tbl.getTableName());
             tableIdByLabelId.put(tbl.getLabel(), tid);
@@ -113,6 +123,12 @@ public class InformixCDCEngine {
         }
 
         return builder.build();
+    }
+
+    public void reloadCDCEngine(InformixDatabaseSchema schema, Long fromLsn) throws InterruptedException {
+        this.close();
+        this.setStartLsn(fromLsn);
+        this.init(schema);
     }
 
     public void close() {

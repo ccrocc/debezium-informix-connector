@@ -6,6 +6,8 @@
 
 package laoflch.debezium.connector.informix;
 
+import static io.debezium.relational.RelationalDatabaseConnectorConfig.SNAPSHOT_FULL_COLUMN_SCAN_FORCE;
+
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.List;
@@ -62,9 +64,14 @@ public class InformixConnectorTask extends BaseSourceTask {
                 .withDefault("database.fetchSize", 10_000)
                 .build();
 
+        // set `SNAPSHOT_FULL_COLUMN_SCAN_FORCE: true`, in order get schema with `SYSTEM TABLES`.
+        // see: debezium-core => io.debezium.jdbc.JdbcConnection#readSchema function
         final Configuration jdbcConfig = config.filter(
                 x -> !(x.startsWith(DatabaseHistory.CONFIGURATION_FIELD_PREFIX_STRING) || x.equals(InformixConnectorConfig.DATABASE_HISTORY.name())))
-                .subset("database.", true);
+                .subset("database.", true)
+                .edit()
+                .withDefault(SNAPSHOT_FULL_COLUMN_SCAN_FORCE, true)
+                .build();
 
         dataConnection = new InformixConnection(jdbcConfig);
         metadataConnection = new InformixConnection(jdbcConfig);

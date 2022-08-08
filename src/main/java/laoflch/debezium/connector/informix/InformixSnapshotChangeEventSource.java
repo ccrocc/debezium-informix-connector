@@ -79,7 +79,7 @@ public class InformixSnapshotChangeEventSource extends RelationalSnapshotChangeE
 
     @Override
     protected Set<TableId> getAllTableIds(RelationalSnapshotContext<InformixOffsetContext> ctx) throws Exception {
-        return jdbcConnection.readTableNames(null, null, null, new String[]{ "TABLE" });
+        return jdbcConnection.readTableNames(null, null, null, new String[]{ "TABLE", "SYSTEM TABLE" });
     }
 
     @Override

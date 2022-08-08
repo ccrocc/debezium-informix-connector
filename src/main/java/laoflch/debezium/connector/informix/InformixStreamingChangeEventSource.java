@@ -7,14 +7,18 @@
 package laoflch.debezium.connector.informix;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.apache.kafka.connect.data.Struct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.informix.jdbc.IfmxReadableType;
 import com.informix.stream.api.IfmxStreamRecord;
+import com.informix.stream.cdc.IfxCDCEngine;
 import com.informix.stream.cdc.records.IfxCDCBeginTransactionRecord;
 import com.informix.stream.cdc.records.IfxCDCCommitTransactionRecord;
 import com.informix.stream.cdc.records.IfxCDCMetaDataRecord;
@@ -24,6 +28,7 @@ import com.informix.stream.cdc.records.IfxCDCTimeoutRecord;
 import com.informix.stream.cdc.records.IfxCDCTruncateRecord;
 import com.informix.stream.impl.IfxStreamException;
 
+import io.debezium.data.Envelope;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.pipeline.source.spi.StreamingChangeEventSource;
@@ -112,7 +117,7 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                         handleInsert(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, true);
                         break;
                     case COMMIT:
-                        handleCommit(offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, true);
+                        handleCommit(cdcEngine, offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, true);
                         break;
                     case ROLLBACK:
                         handleRollback(offsetContext, (IfxCDCRollbackTransactionRecord) record, transCache, false);
@@ -163,7 +168,7 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                             handleInsert(cdcEngine, offsetContext, (IfxCDCOperationRecord) record, transCache, false);
                             break;
                         case COMMIT:
-                            handleCommit(offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, false);
+                            handleCommit(cdcEngine, offsetContext, (IfxCDCCommitTransactionRecord) record, transCache, false);
                             break;
                         case ROLLBACK:
                             handleRollback(offsetContext, (IfxCDCRollbackTransactionRecord) record, transCache, false);
@@ -253,6 +258,7 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
     public void handleAfterUpdate(InformixCDCEngine cdcEngine, InformixOffsetContext offsetContext, IfxCDCOperationRecord record,
                                   InformixTransactionCache transactionCache, boolean recover)
             throws IfxStreamException, SQLException {
+        long _start = System.nanoTime();
         Long transId = (long) record.getTransactionId();
 
         Map<String, IfmxReadableType> newData = record.getData();
@@ -271,6 +277,12 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                             transId,
                             TxLogPosition.LSN_NULL));
         }
+
+        long _end = System.nanoTime();
+
+        LOGGER.info("Received AFTER_UPDATE :: transId={} seqId={} elapsedTime={} ms\n\t table={}, \nold_value={},\n new_value={}",
+                record.getTransactionId(), record.getSequenceId(),
+                (_end - _start) / 1000000d, record.getLabel(), oldData.toString(), newData.toString());
     }
 
     public void handleBegin(InformixOffsetContext offsetContext, IfxCDCBeginTransactionRecord record, InformixTransactionCache transactionCache, boolean recover)
@@ -307,11 +319,13 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                 (_end - _start) / 1000000d);
     }
 
-    public void handleCommit(InformixOffsetContext offsetContext, IfxCDCCommitTransactionRecord record, InformixTransactionCache transactionCache, boolean recover)
+    public void handleCommit(InformixCDCEngine cdcEngine, InformixOffsetContext offsetContext, IfxCDCCommitTransactionRecord record,
+                             InformixTransactionCache transactionCache, boolean recover)
             throws InterruptedException, IfxStreamException {
         long _start = System.nanoTime();
         Long transId = (long) record.getTransactionId();
         Long endTime = record.getTime();
+        Boolean reloadRequired = false;
 
         Optional<InformixTransactionCache.TransactionCacheBuffer> transactionCacheBuffer = transactionCache.commitTxn(transId, endTime);
         if (!recover) {
@@ -328,7 +342,16 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                                 TxLogPosition.LSN_NULL));
 
                 for (InformixTransactionCache.TransactionCacheRecord r : transactionCacheBuffer.get().getTransactionCacheRecords()) {
-                    dispatcher.dispatchDataChangeEvent(r.getTableId(), r.getInformixChangeRecordEmitter());
+                    String tableName = r.getTableId().table();
+                    // do not dispatch records in system tables
+                    if (tableName.equals("systables") || tableName.equals("syscolumns")) {
+                        if (isAttach(r, cdcEngine)) {
+                            reloadRequired = true;
+                        }
+                    }
+                    else {
+                        dispatcher.dispatchDataChangeEvent(r.getTableId(), r.getInformixChangeRecordEmitter());
+                    }
                 }
                 LOGGER.info("Handle Commit {} Events, transElapsedTime={}",
                         transactionCacheBuffer.get().size(), transactionCacheBuffer.get().getElapsed());
@@ -341,6 +364,17 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                 record.getTransactionId(), record.getSequenceId(),
                 record.getTime(),
                 (_end - _start) / 1000000d);
+
+        if (reloadRequired) {
+            LOGGER.info(" Received Attach Event :: Reloading CDC Engine......");
+
+            TxLogPosition lastPosition = offsetContext.getChangePosition();
+            Long fromLsn = lastPosition.getCommitLsn();
+
+            cdcEngine.reloadCDCEngine(schema, fromLsn);
+
+            LOGGER.info(" After Attach Event :: CDC Engine Reloaded.");
+        }
     }
 
     public void handleInsert(InformixCDCEngine cdcEngine, InformixOffsetContext offsetContext, IfxCDCOperationRecord record, InformixTransactionCache transactionCache,
@@ -368,9 +402,9 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
         }
 
         long _end = System.nanoTime();
-        LOGGER.info("Received INSERT :: transId={} seqId={} elapsedTime={} ms",
+        LOGGER.info("Received INSERT :: transId={} seqId={} elapsedTime={} ms\n\t table={}, new_value={}",
                 record.getTransactionId(), record.getSequenceId(),
-                (_end - _start) / 1000000d);
+                (_end - _start) / 1000000d, record.getLabel(), data.toString());
     }
 
     public void handleRollback(InformixOffsetContext offsetContext, IfxCDCRollbackTransactionRecord record, InformixTransactionCache transactionCache, boolean recover)
@@ -460,9 +494,9 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
         }
 
         long _end = System.nanoTime();
-        LOGGER.info("Received DELETE :: transId={} seqId={} elapsedTime={} ms",
+        LOGGER.info("Received DELETE :: transId={} seqId={} elapsedTime={} ms\n\t table={}, del_value={}",
                 record.getTransactionId(), record.getSequenceId(),
-                (_end - _start) / 1000000d);
+                (_end - _start) / 1000000d, record.getLabel(), data.toString());
     }
 
     public void handleEvent(TableId tableId,
@@ -482,5 +516,45 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                 InformixChangeRecordEmitter.convertIfxData2Array(dataNext, tableSchema), clock);
 
         offsetContext.getInformixTransactionCache().addEvent2Tx(tableId, informixChangeRecordEmitter, txId);
+    }
+
+    // CDC Attach Events:
+    // case 1: Create New Table After Attach Table to Archived(Historical) Table
+    // `oldValue == null` && `newValue.tabname in watched table list`
+    // case 2: Rename Table(Same schema with Table to be Attached) After Attach Table to Archived(Historical) Table
+    // `oldValue.tabname != newValue.tabname` && `newValue.tabname in watched table list`
+    private boolean isAttach(InformixTransactionCache.TransactionCacheRecord r, InformixCDCEngine cdcEngine) {
+
+        boolean isAttach = false;
+
+        String tableName = r.getTableId().table();
+        Envelope.Operation op = r.getInformixChangeRecordEmitter().getOperation();
+
+        if (tableName.equals("systables") && (op.equals(Envelope.Operation.CREATE) || op.equals(Envelope.Operation.UPDATE))) {
+            TableSchema tableSchema = (TableSchema) schema.schemaFor(r.getTableId());
+            Struct oldValue = tableSchema.valueFromColumnData(r.getInformixChangeRecordEmitter().getOldColumnValues());
+            Struct newValue = tableSchema.valueFromColumnData(r.getInformixChangeRecordEmitter().getNewColumnValues());
+
+            String newValueTabname = newValue != null ? newValue.getString("tabname") : "null";
+            String oldValueTabname = oldValue != null ? oldValue.getString("tabname") : "null";
+
+            if (!newValueTabname.equals("systables") && !newValueTabname.equals("syscolumns")) {
+
+                List<String> currentWatchedTables = new ArrayList<>();
+                for (IfxCDCEngine.IfmxWatchedTable watchedTable : cdcEngine.getCdcEngine().getBuilder().getWatchedTables()) {
+                    currentWatchedTables.add(watchedTable.getTableName());
+                }
+
+                // while new `tabname` value in currentWatchedTables list, we can assume as after attach
+                if (newValueTabname != null && !oldValueTabname.equals(newValueTabname) && currentWatchedTables.contains(newValueTabname)) {
+                    isAttach = true;
+                }
+
+                LOGGER.info("Received `systables` CHANGE :: op={} oldValueTabname={} newValueTabname={} isAttach={}\n\t watchTableList={}",
+                        op.toString(), oldValueTabname, newValueTabname, isAttach, currentWatchedTables.toString());
+
+            }
+        }
+        return isAttach;
     }
 }
