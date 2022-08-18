@@ -17,9 +17,6 @@ import io.debezium.jdbc.JdbcValueConverters;
 import io.debezium.jdbc.TemporalPrecisionMode;
 import io.debezium.relational.Column;
 import io.debezium.relational.ValueConverter;
-import io.debezium.time.MicroTimestamp;
-import io.debezium.time.NanoTimestamp;
-import io.debezium.time.Timestamp;
 
 /**
  * Conversion of Informix specific datatypes.
@@ -59,21 +56,6 @@ public class InformixValueConverters extends JdbcValueConverters {
                 return SchemaBuilder.int16();
             case Types.DECIMAL:
                 return SpecialValueDecimal.builder(this.decimalMode, column.length(), column.scale().get());
-            case Types.TIMESTAMP: // TODO: Remove this block
-                if (!this.adaptiveTimePrecisionMode && !this.adaptiveTimeMicrosecondsPrecisionMode) {
-                    if (this.getTimePrecision(column) <= 3) {
-                        return io.debezium.time.Timestamp.builder();
-                    }
-                    else if (this.getTimePrecision(column) <= 6) {
-                        return MicroTimestamp.builder();
-                    }
-                    else {
-                        return NanoTimestamp.builder();
-                    }
-                }
-                else {
-                    return Timestamp.builder();
-                }
             default:
                 return super.schemaBuilder(column);
         }
@@ -88,23 +70,6 @@ public class InformixValueConverters extends JdbcValueConverters {
                 return (data) -> convertSmallInt(column, fieldDefn, data);
             case Types.DECIMAL:
                 return (data) -> convertDecimal(column, fieldDefn, data);
-            case Types.TIMESTAMP: // TODO: remove this block for 1.6
-                return (data) -> {
-                    if (!adaptiveTimePrecisionMode && !adaptiveTimeMicrosecondsPrecisionMode) {
-                        if (getTimePrecision(column) <= 3) {
-                            return convertTimestampToEpochMillis(column, fieldDefn, data);
-                        }
-                        else if (getTimePrecision(column) <= 6) {
-                            return convertTimestampToEpochMicros(column, fieldDefn, data);
-                        }
-                        else {
-                            return convertTimestampToEpochNanos(column, fieldDefn, data);
-                        }
-                    }
-                    else {
-                        return convertTimestampToEpochMillisAsDate(column, fieldDefn, data);
-                    }
-                };
             default:
                 return super.converter(column, fieldDefn);
         }
@@ -113,11 +78,6 @@ public class InformixValueConverters extends JdbcValueConverters {
     @Override
     protected int getTimePrecision(Column column) {
         return column.scale().get();
-    }
-
-    protected Object convertTimestampWithZone(Column column, Field fieldDefn, Object data) {
-        // dummy return
-        return super.convertTimestampWithZone(column, fieldDefn, data);
     }
 
 }
