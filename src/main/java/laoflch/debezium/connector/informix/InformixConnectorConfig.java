@@ -230,7 +230,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
 
     // ref: https://www.ibm.com/docs/en/informix-servers/12.10?topic=functions-cdc-opensess-function
     // note: We can get more records per fetch in order to reduce TCPs during data transfer.
-    //       Based on our test, set this argument in `cdc_opensess()` in an appropriate value will make mass improvement.
+    // Based on our test, set this argument in `cdc_opensess()` in an appropriate value will make mass improvement.
     public static final Field CDC_MAXRECS = Field.create("cdc.maxRecs")
             .withDisplayName("Max Number of CDC Records Per Read.")
             .withType(Type.INT)
@@ -332,7 +332,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
     private final ColumnNameFilter columnFilter;
 
     public InformixConnectorConfig(Configuration config) {
-        super(InformixConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(config), x -> x.schema() + "." + x.table(), false,
+        super(InformixConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(), x -> x.schema() + "." + x.table(), false,
                 ColumnFilterMode.SCHEMA);
 
         this.databaseName = config.getString(DATABASE_NAME);
@@ -390,29 +390,17 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
     }
 
     private static class SystemTablesPredicate implements TableFilter {
-
-        protected static Configuration config = null;
-
-        public SystemTablesPredicate(Configuration config) {
-            this.config = config;
-        }
-
         @Override
         public boolean isIncluded(TableId t) {
             // capture all tables by default
             boolean isIncluded = true;
             // keep `systables` and `syscolumns` in order to support DDL and Attach
-            String includedTablePatterns = config.getString(RelationalDatabaseConnectorConfig.TABLE_INCLUDE_LIST);
             if (t.table().toLowerCase().equals("systables") || t.table().toLowerCase().equals("syscolumns")) {
                 isIncluded = true;
             }
             // 过滤库中的系统表，informix的系统表以sys开头
             else if (t.table().toLowerCase().startsWith("sys")) {
                 isIncluded = false;
-            }
-            else if (includedTablePatterns != null && includedTablePatterns.length() > 0) {
-                Predicate<TableId> delegate = Predicates.includes(includedTablePatterns, TableId::toString);
-                isIncluded = delegate.test(new TableId(null, t.schema(), t.table()));
             }
             return isIncluded;
         }
