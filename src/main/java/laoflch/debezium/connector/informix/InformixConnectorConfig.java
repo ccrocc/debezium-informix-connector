@@ -279,6 +279,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
             RelationalDatabaseConnectorConfig.TABLE_EXCLUDE_LIST,
             RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
             RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST,
+            RelationalDatabaseConnectorConfig.COLUMN_INCLUDE_LIST,
             RelationalDatabaseConnectorConfig.DECIMAL_HANDLING_MODE,
             RelationalDatabaseConnectorConfig.TIME_PRECISION_MODE,
             RelationalDatabaseConnectorConfig.MSG_KEY_COLUMNS,
@@ -307,6 +308,7 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
                 RelationalDatabaseConnectorConfig.TABLE_INCLUDE_LIST,
                 RelationalDatabaseConnectorConfig.TABLE_EXCLUDE_LIST,
                 RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST,
+                RelationalDatabaseConnectorConfig.COLUMN_INCLUDE_LIST,
                 RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
                 RelationalDatabaseConnectorConfig.SNAPSHOT_FULL_COLUMN_SCAN_FORCE,
                 RelationalDatabaseConnectorConfig.TABLE_IGNORE_BUILTIN,
@@ -338,13 +340,21 @@ public class InformixConnectorConfig extends HistorizedRelationalDatabaseConnect
         this.databaseName = config.getString(DATABASE_NAME);
         this.snapshotMode = SnapshotMode.parse(config.getString(SNAPSHOT_MODE), SNAPSHOT_MODE.defaultValueAsString());
         this.snapshotIsolationMode = SnapshotIsolationMode.parse(config.getString(SNAPSHOT_ISOLATION_MODE), SNAPSHOT_ISOLATION_MODE.defaultValueAsString());
-        this.columnFilter = getColumnNameFilter(config.getString(RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST));
+
+        String includedColumnPatterns = config.getString(RelationalDatabaseConnectorConfig.COLUMN_INCLUDE_LIST);
+        if (null != includedColumnPatterns) {
+            this.columnFilter = getColumnNameFilter(includedColumnPatterns, true);
+        } else {
+            String excludedColumnPatterns = config.getString(RelationalDatabaseConnectorConfig.COLUMN_EXCLUDE_LIST);
+            this.columnFilter = getColumnNameFilter(excludedColumnPatterns, false);
+        }
     }
 
-    private static ColumnNameFilter getColumnNameFilter(String excludedColumnPatterns) {
+    private static ColumnNameFilter getColumnNameFilter(String columnFilterPatterns, boolean isIncludedFilter) {
         return new ColumnNameFilter() {
 
-            Predicate<ColumnId> delegate = Predicates.excludes(excludedColumnPatterns, ColumnId::toString);
+            Predicate<ColumnId> delegate = isIncludedFilter ? Predicates.includes(columnFilterPatterns, ColumnId::toString)
+                                        : Predicates.excludes(columnFilterPatterns, ColumnId::toString);
 
             @Override
             public boolean matches(String catalogName, String schemaName, String tableName, String columnName) {
