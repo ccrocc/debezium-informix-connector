@@ -378,7 +378,7 @@ public class InformixStreamingChangeEventSource implements StreamingChangeEventS
                 record.getTime(),
                 (_end - _start) / 1000000d);
 
-        if (reloadRequired) {
+        if (!recover && reloadRequired) {
             LOGGER.info(" Received Attach Event :: Reloading CDC Engine......");
 
             TxLogPosition lastPosition = offsetContext.getChangePosition();

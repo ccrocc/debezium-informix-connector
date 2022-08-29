@@ -24,6 +24,8 @@ public class InformixDatabaseSchema extends HistorizedRelationalDatabaseSchema {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(InformixDatabaseSchema.class);
 
+    private final InformixConnectorConfig connectorConfig;
+
     public InformixDatabaseSchema(InformixConnectorConfig connectorConfig, SchemaNameAdjuster schemaNameAdjuster, TopicSelector<TableId> topicSelector,
                                   InformixConnection connection) {
         super(connectorConfig, topicSelector, connectorConfig.getTableFilters().dataCollectionFilter(), connectorConfig.getColumnFilter(),
@@ -34,6 +36,8 @@ public class InformixDatabaseSchema extends HistorizedRelationalDatabaseSchema {
                         connectorConfig.getSourceInfoStructMaker().schema(),
                         connectorConfig.getSanitizeFieldNames()),
                 false, connectorConfig.getKeyMapper());
+
+        this.connectorConfig = connectorConfig;
     }
 
     @Override
@@ -42,6 +46,12 @@ public class InformixDatabaseSchema extends HistorizedRelationalDatabaseSchema {
 
         // just a single table per DDL event for DB2
         Table table = schemaChange.getTables().iterator().next();
+
+        TableId tableId = table.id();
+        table = table.edit().setColumns(table.filterColumns(
+                    column -> this.connectorConfig.getColumnFilter().matches(tableId.catalog(), tableId.schema(), tableId.table(), column.name())
+                )).create();
+
         buildAndRegisterSchema(table);
         tables().overwriteTable(table);
 

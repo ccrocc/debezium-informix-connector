@@ -123,7 +123,7 @@ public class InformixCDCEngine {
         /*
          * Build Map of Label_id to TableId.
          */
-        tableIdByLabelId.clear();
+//        tableIdByLabelId.clear();
         for (POIfxCDCEngine.IfmxWatchedTable tbl : builder.getWatchedTables()) {
             TableId tid = new TableId(tbl.getDatabaseName(), tbl.getNamespace(), tbl.getTableName());
             tableIdByLabelId.put(tbl.getLabel(), tid);
